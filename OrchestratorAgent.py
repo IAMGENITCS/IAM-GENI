@@ -1,152 +1,3 @@
-# import os
-# import json
-# # import logging
-# # logging.basicConfig(level=logging.DEBUG)
-# from dotenv import load_dotenv
-# from semantic_kernel.kernel import Kernel
-# from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
-# from semantic_kernel.agents import ChatCompletionAgent
-# from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
-# from semantic_kernel.contents.chat_message_content import ChatMessageContent
-# from semantic_kernel.contents.utils.author_role import AuthorRole
-# from azure.identity import DefaultAzureCredential
-# from azure.ai.projects import AIProjectClient
-# from semantic_kernel.contents.chat_history import ChatHistory
-# from semantic_kernel.contents.chat_message_content import ChatMessageContent
-# from semantic_kernel.contents.utils.author_role import AuthorRole
-
-# # Your existing plugin classes
-# from iamassistant_orch import IAMAssistant
-# from provisioning_orch import ProvisioningAgent
-
-# load_dotenv()
-
-# # Azure AI Foundry connection
-# AIPROJECT_CONN_STR = os.environ["AIPROJECT_CONNECTION_STRING"]
-# CHAT_MODEL           = os.environ["CHAT_MODEL"]
-# CHAT_MODEL_ENDPOINT  = os.environ["CHAT_MODEL_ENDPOINT"]
-# CHAT_MODEL_API_KEY   = os.environ["CHAT_MODEL_API_KEY"]
-
-# async def main():
-#     # 1) Initialize Kernel and AI service
-#     kernel = Kernel()
-#     service_id = "orchestrator_iam"
-#     kernel.add_service(
-#         AzureChatCompletion(
-#             service_id=service_id,
-#             deployment_name=CHAT_MODEL,
-#             endpoint=CHAT_MODEL_ENDPOINT,
-#             api_key=CHAT_MODEL_API_KEY
-#         )
-#     )
-
-#     # 2) Register plugins
-#     kernel.add_plugin(IAMAssistant(project_client=AIProjectClient.from_connection_string(
-#                         credential=DefaultAzureCredential(),
-#                         conn_str=AIPROJECT_CONN_STR)),
-#                       plugin_name="IAMAssistant")
-#     kernel.add_plugin(ProvisioningAgent(),
-#                       plugin_name="ProvisioningAgent")
-
-#     # 3) Configure planner to pick the right function
-#     settings = kernel.get_prompt_execution_settings_from_service_id(service_id)
-#     settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
-
-#     # 4) Orchestrator instructions
-#     orchestrator = ChatCompletionAgent(
-#         service_id=service_id,
-#         kernel=kernel,
-#         name="OrchestratorAgent",
-#         instructions="""
-# You are an orchestration agent for enterprise Identity and Access Management (IAM).
-
-# Users may ask:
-# - IAM guidance questions such as:
-#   - "How do I reset my password?"
-#   - "What is multi-factor authentication?"
-#   - "How do I request access to an application?"
-#   - "What are the steps to register for MFA?"
-#   - "What is the difference between a user and a group?"
-
-# - Provisioning tasks such as:
-#   - "Create a user "
-#   - "List all users in Entra ID"
-#   - "List all groups in Entra ID"
-#   - "Update user"
-#   - "Delete user "
-#   - "Show details of user"
-#   - "Create a group called 'Finance Team'"
-#   - "Delete the group"
-#   - "Add user emily.wang@contoso.com to group 'Project Alpha'"
-#   - "Remove user frank.taylor@contoso.com from group 'HR Admins'"
-#   - "Assign owner george.kim@contoso.com to group 'Security Leads'"
-
-# Choose from the following plugins:
-# - **IAMAssistant**: for answering IAM-related questions and guidance.
-# - **ProvisioningAgent**: for executing provisioning tasks as  listed above.
-
-# Your job is to:
-# 1. Detect the user's intent.
-# 2. Choose the appropriate plugin.
-# 3. Call the relevant function.
-# 4. Return only a JSON object in this format:
-
-# {
-#   "action": "iam_query" | "provision",
-#   "result": "<response from the selected plugin>"
-# }
-
-# Do not include any extra commentary or formatting. Only return the JSON object.
-# """
-
-# ,
-#         execution_settings=settings
-#     )
-
-#     # history = []
-#     chat_history = ChatHistory()
-#     print("=== IAM Orchestrator Ready ===")
-
-#     while True:
-#         user_input = input("\n> ").strip()
-#         if not user_input or user_input.lower() in ("exit", "quit"):
-#             print("Goodbye.")
-#             break
-
-#        # history.append(ChatMessageContent(role=AuthorRole.USER, content=user_input))
-#         chat_history.messages.append(
-#             ChatMessageContent(
-#                 role=AuthorRole.USER,
-#                 content=user_input
-#             )
-#         )
-            
-        
-#         async for response in orchestrator.invoke(chat_history):
-#         # 3. Parse the response
-#             payload = json.loads(response.content)
-#             action, result = payload["action"], payload["result"]
-
-#             if action == "iam_query":
-#                 print(f"\n[IAM Guidance]\n{result}")
-#             else:
-#                 print(f"\n[Provisioning Result]\n{result}")
-
-#         # 4. Record the assistant turn
-#             chat_history.messages.append(
-#                 ChatMessageContent(
-#                 role=AuthorRole.ASSISTANT,
-#                 content=response.content
-#                 )
-#             )
-
-# if __name__ == "__main__":
-#     import asyncio
-#     asyncio.run(main())
-
-
-
-
 import os
 import json
 # import logging
@@ -159,6 +10,7 @@ from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoic
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential
 from azure.ai.projects import AIProjectClient
 from semantic_kernel.contents.chat_history import ChatHistory
 
@@ -173,6 +25,13 @@ AIPROJECT_CONN_STR      = os.environ["AIPROJECT_CONNECTION_STRING"]
 CHAT_MODEL              = os.environ["CHAT_MODEL"]
 CHAT_MODEL_ENDPOINT     = os.environ["CHAT_MODEL_ENDPOINT"]
 CHAT_MODEL_API_KEY      = os.environ["CHAT_MODEL_API_KEY"]
+
+#Backend app  credential
+credential=ClientSecretCredential(
+    tenant_id=os.environ["TENANT_ID"],
+    client_id=os.environ["CLIENT_ID_BACKEND"],
+    client_secret=os.environ["CLIENT_SECRET_BACKEND"],
+)
 
 DEBUG_MODE = True  # Toggle for verbose logging
 
@@ -198,7 +57,7 @@ async def main():
     # 2) Register plugins
     kernel.add_plugin(
         IAMAssistant(project_client=AIProjectClient.from_connection_string(
-            credential=DefaultAzureCredential(),
+            credential=credential,
             conn_str=AIPROJECT_CONN_STR)),
         plugin_name="IAMAssistant"
     )
@@ -325,7 +184,41 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
   - give the group list even if the output is in json or not 
   - call Provisioning agent to retrieve the list of groups with group display name and ID
   - Return the entire plugin response and print the output as it is to the user.
-  - only call the ProvisioningAgent when you have the number of groups they want to get listed.  
+  - only call the ProvisioningAgent when you have the number of groups they want to get listed. 
+
+-If user asks to Get/show group owner or user's intent is to Get/show group owner:
+ 
+  - Ask the user for group id.
+
+  - Only call the ProvisioningAgent when you collect the group id.
+
+-If user asks to show members of a group or user's intent is to show members of a group:
+ 
+  - Ask the user for group id.
+
+  - Only call the ProvisioningAgent when you collect the group id.
+
+-If user asks to Count the total number of groups that have no owners or user's intent is to Count the total number of groups that have no owners:
+ 
+  - call the ProvisioningAgent.
+
+-If user asks to update details of a group or user's intent is to update details of a group:
+ 
+  - Ask the user for group id.
+  - Ask user for details they want to update
+  - Only call the ProvisioningAgent when you collect the group id.
+ 
+-If user asks to show/list ownerless Groups or user's intent is to list/show ownerless groups:
+ 
+  - Ask the user the number of groups they want to be listed.
+
+  - give the group list even if the output is in json or not 
+
+  - call Provisioning agent to retrieve the list of groups with group display name and ID
+
+  - Return the entire plugin response and print the output as it is to the user.
+
+  - only call the ProvisioningAgent when you have the number of groups they want to get listed. 
 
 
 # Response Rules:
