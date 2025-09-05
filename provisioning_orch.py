@@ -221,3 +221,124 @@ class ProvisioningAgent:
         if resp.status_code == 204:
             return f"👑 User '{owner_id}' assigned as owner of group '{group_id}'."
         return f"❌ Error assigning owner: {resp.status_code} – {resp.text}"
+    
+    @kernel_function(description="Show the owners of a specific group by its object ID.")
+    async def get_group_owners(self, group_id: str) -> str:
+        """
+        Fetches the list of users who are owners of the given group.
+        """
+        url = f"{self.graph_base_url}/groups/{group_id}/owners"
+        resp = requests.get(url, headers=self._headers)
+        if resp.status_code != 200:
+            return f"❌ Error fetching owners for group '{group_id}': {resp.status_code} – {resp.text}"
+
+        owners = resp.json().get("value", [])
+        if not owners:
+            return f"ℹ️ Group '{group_id}' has no owners."
+        lines = [f"- {o.get('displayName')} ({o.get('userPrincipalName', o.get('mailNickname',''))})"
+                 for o in owners]
+        return "\n".join(lines)
+    
+    @kernel_function(description="Show the members of a specific group by its object ID.")
+    async def get_group_members(self, group_id: str) -> str:
+        """
+        Fetches the list of users who are members of the given group.
+        """
+        url = f"{self.graph_base_url}/groups/{group_id}/members"
+        resp = requests.get(url, headers=self._headers)
+        if resp.status_code != 200:
+            return f"❌ Error fetching members for group '{group_id}': {resp.status_code} – {resp.text}"
+
+        members = resp.json().get("value", [])
+        if not members:
+            return f"ℹ️ Group '{group_id}' has no members."
+        lines = [f"- {m.get('displayName')} ({m.get('userPrincipalName', m.get('mailNickname',''))})"
+                 for m in members]
+        return "\n".join(lines)
+
+    @kernel_function(description="Count the total number of groups that have no owners in Entra ID.")
+    async def count_ownerless_groups(self) -> str:
+        """
+        Lists all groups and counts how many have zero owners.
+        """
+        # 1) Retrieve all groups
+        url = f"{self.graph_base_url}/groups?$select=id,displayName"
+        resp = requests.get(url, headers=self._headers)
+        if resp.status_code != 200:
+            return f"❌ Error listing groups: {resp.status_code} – {resp.text}"
+
+        groups = resp.json().get("value", [])
+        ownerless = []
+
+        # 2) Check owners for each group
+        for g in groups:
+            gid = g["id"]
+            owners_resp = requests.get(f"{self.graph_base_url}/groups/{gid}/owners",
+                                       headers=self._headers)
+            if owners_resp.status_code != 200:
+                # skip groups we can’t query
+                continue
+            if not owners_resp.json().get("value"):
+                ownerless.append(g["displayName"])
+
+        count = len(ownerless)
+        if count == 0:
+            return "ℹ️ Every group has at least one owner."
+        lines = [f"- {name}" for name in ownerless]
+        return f"Total ownerless groups: {count}\n" + "\n".join(lines)
+
+    @kernel_function(description="Update a field for an existing group in Entra ID.")
+    async def update_group(self, group_id: str, field: str, value: str) -> str:
+        """
+        Updates a single property of a group (e.g., displayName, mailNickname).
+        """
+        url = f"{self.graph_base_url}/groups/{group_id}"
+        payload = {field: value}
+        resp = requests.patch(url, headers=self._headers, json=payload)
+        if resp.status_code == 204:
+            return f"✅ Updated group '{group_id}': set {field} = {value}"
+        return f"❌ Error updating group '{group_id}': {resp.status_code} – {resp.text}"
+    
+    @kernel_function(description="List given number ownerless groups in Entra ID.")
+    async def list_ownerless_groups(self, max_results: int) -> str:
+        """
+        Fetches groups in pages and returns up to `max_results` group display names
+        for which no owners are defined.
+        """
+        # Fetch a batch of groups at a time (Graph allows up to 999 per page)
+        page_size = min(max_results * 5, 999)
+        url = f"{self.graph_base_url}/groups?$select=id,displayName&$top={page_size}"
+        ownerless = []
+
+        # Iterate pages until we have enough ownerless groups or run out of pages
+        while url and len(ownerless) < max_results:
+            resp = requests.get(url, headers=self._headers)
+            if resp.status_code != 200:
+                return f"❌ Error fetching groups: {resp.status_code} – {resp.text}"
+
+            payload = resp.json()
+            for g in payload.get("value", []):
+                if len(ownerless) >= max_results:
+                    break
+
+                # Check owners for this group
+                owners_resp = requests.get(
+                    f"{self.graph_base_url}/groups/{g['id']}/owners",
+                    headers=self._headers
+                )
+                if owners_resp.status_code != 200:
+                    # skip on error
+                    continue
+
+                if not owners_resp.json().get("value"):
+                    ownerless.append(g["displayName"])
+
+            # Follow nextLink if more pages remain
+            url = payload.get("@odata.nextLink")
+
+        if not ownerless:
+            return "ℹ️ No ownerless groups found."
+
+        # Format as a markdown-style list
+        lines = [f"- {name}" for name in ownerless]
+        return "\n".join(lines)
