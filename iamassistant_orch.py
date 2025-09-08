@@ -5,12 +5,20 @@ from dotenv import load_dotenv
 from semantic_kernel.functions import kernel_function
 
 from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential
 
 from azure.ai.projects import AIProjectClient
 
 from azure.ai.projects.models import AzureAISearchTool
  
 load_dotenv()
+
+credential=ClientSecretCredential(
+    tenant_id=os.environ["TENANT_ID"],
+    client_id=os.environ["CLIENT_ID_BACKEND"],
+    client_secret=os.environ["CLIENT_SECRET_BACKEND"],
+)
+
  
 class IAMAssistant:
 
@@ -19,6 +27,11 @@ class IAMAssistant:
         print("🔧 Initializing IAM Assistant...")
 
         self.project_client = project_client
+        self.project_client = AIProjectClient.from_connection_string(
+            # credential=DefaultAzureCredential(),
+            credential=credential,
+            conn_str=os.environ["AIPROJECT_CONNECTION_STRING"],
+        )
  
         # Find Cognitive Search connection
 

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import ConnectionType
 from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential
 from azure.ai.projects.models import AzureAISearchTool
 from semantic_kernel.agents import ChatCompletionAgent
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
@@ -22,6 +23,11 @@ from rich.markdown import Markdown
 load_dotenv()
 
 # logging.basicConfig(level=logging.DEBUG)
+credential=ClientSecretCredential(
+    tenant_id=os.environ["TENANT_ID"],
+    client_id=os.environ["CLIENT_ID_BACKEND"],
+    client_secret=os.environ["CLIENT_SECRET_BACKEND"],
+)
 
 class IAMAssistant:
     """
@@ -33,7 +39,8 @@ class IAMAssistant:
  
         # Connect to Azure AI Project
         self.project_client = AIProjectClient.from_connection_string(
-            credential=DefaultAzureCredential(),
+            # credential=DefaultAzureCredential(),
+            credential=credential,
             conn_str=os.environ["AIPROJECT_CONNECTION_STRING"],
         )
  
