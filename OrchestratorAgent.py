@@ -227,7 +227,9 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
 
 ⚠️ You must return ONLY a valid JSON object in this format:
 {
-  "action": "provision",
+   "action": "<iam_query | provision>",
+  "agent": "<IAMAssistant | ProvisioningAgent | AD_ProvisioningAgent>",
+  "operation": "<operation_name>",
   "result": "<plugin response>"
 }
 **Note: If the plugin returns a list (e.g., users or groups), include the entire list in the `result` field as a string.
