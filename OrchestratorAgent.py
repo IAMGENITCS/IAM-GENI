@@ -227,7 +227,7 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
 
 ⚠️ You must return ONLY a valid JSON object in this format:
 {
-   "action": "<iam_query | provision>",
+  "action": "<iam_query | provision | ad_provision>",
   "agent": "<IAMAssistant | ProvisioningAgent | AD_ProvisioningAgent>",
   "operation": "<operation_name>",
   "result": "<plugin response>"
@@ -272,7 +272,9 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
             if action == "iam_query":
                 print(f"\n✅ [Iam Invoked]\n{result}")
             elif action == "provision":
-                print(f"\n✅ [Pro Invoked]\n{result}")
+                print(f"\n✅ [Entra Pro Invoked]\n{result}")
+            elif action == "ad_provision":
+                print(f"\n✅ [AD Pro Invoked]\n{result}")
             else:
                 # print(f"\n⚠️ [Unknown Action] Orchestrator may have replied directly:\n{response.content}")
                 print(f"\n [Orchestrator Response] :\n{response.content}")
@@ -280,7 +282,6 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
             chat_history.messages.append(
                 ChatMessageContent(role=AuthorRole.ASSISTANT, content=response.content)
             )
-
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
