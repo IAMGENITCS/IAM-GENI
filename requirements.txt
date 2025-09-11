@@ -43,6 +43,7 @@ jsonschema-specifications==2024.10.1
 jupyter_client==8.6.3
 jupyter_core==5.7.2
 lazy-object-proxy==1.10.0
+ldap3
 MarkupSafe==3.0.2
 matplotlib-inline==0.1.7
 more-itertools==10.6.0
