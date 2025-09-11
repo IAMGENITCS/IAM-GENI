@@ -13,6 +13,7 @@ from azure.identity import DefaultAzureCredential
 from azure.identity import ClientSecretCredential
 from azure.ai.projects import AIProjectClient
 from semantic_kernel.contents.chat_history import ChatHistory
+from datetime import datetime, timedelta
 
 # Plugin classes
 from iamassistant_orch import IAMAssistant
@@ -225,11 +226,11 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
 - Ask questions from users clearly.
 - Use plugins only if data is sufficient; otherwise ask for missing info.
 
-⚠️ You must return ONLY a valid JSON object in this format:
-{
-  "action": "provision",
-  "result": "<plugin response>"
-}
+⚠️ Your ONLY output must be a valid JSON object. Do not include any other text, explanations, or commentary:
+{"action": "[iam_query|provision]", "result": "[your result here]"}
+Step 1: Determine the "action" and "result".
+Step 2: Format this information as a JSON object with keys "action" and "result".
+Step 3: Return ONLY the JSON object and no other text.
 **Note: If the plugin returns a list (e.g., users or groups), include the entire list in the `result` field as a string.
 - Do not add commentary, markdown formatting, or extra explanation.
 - Do not summarize the plugin response. Return it exactly as received.
@@ -240,6 +241,28 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
     )
 
     chat_history = ChatHistory()
+    count = 0
+    past_time = datetime.now()
+    ready = False
+    while count<5 and datetime.now()-past_time<timedelta(seconds=30):
+      count += 1
+      chat_history.messages.append(
+        ChatMessageContent(role=AuthorRole.USER, content="hi")
+      )
+      async for response in orchestrator.invoke(chat_history):
+          try:
+            payload = json.loads(response.content)
+          except:
+            continue  
+          if payload:
+              ready = True
+      if ready:
+          break
+    
+    if not ready:
+      print("Model is not ready/available")
+      return
+    
     print("=== 🛡️ IAM Orchestrator Ready ===")
 
     while True:
