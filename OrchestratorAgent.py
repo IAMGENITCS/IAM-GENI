@@ -1,8 +1,8 @@
-
+import asyncio
 import os
 import json
-#import logging
-#logging.basicConfig(level=logging.DEBUG)
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
 from dotenv import load_dotenv
 from semantic_kernel.kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
@@ -360,5 +360,4 @@ The user will either ask an IAM related query, or ask you to perform an IAM prov
             )
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
