@@ -21,5 +21,6 @@ requests==2.32.3
 semantic-kernel==1.19.0
 streamlit
 threading
+time
 traceback
 typing

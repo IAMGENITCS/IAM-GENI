@@ -1,14 +1,14 @@
 import os
-
+import logging
 from dotenv import load_dotenv
-
+import time
 from semantic_kernel.functions import kernel_function
 
 from azure.identity import DefaultAzureCredential
 from azure.identity import ClientSecretCredential
 
 from azure.ai.projects import AIProjectClient
-
+from azure.core.exceptions import HttpResponseError, ServiceResponseError
 from azure.ai.projects.models import AzureAISearchTool
  
 load_dotenv()
@@ -45,7 +45,7 @@ class IAMAssistant:
  
         # Configure Azure AI Search Tool
 
-        self.ai_search = AzureAISearchTool(index_connection_id=conn_id, index_name="iam-docs-rag")
+        self.ai_search = AzureAISearchTool(index_connection_id=conn_id, index_name="admin-user-rag")
  
         # Create IAM agent
 
@@ -57,7 +57,7 @@ class IAMAssistant:
 
             instructions="""
             You are an expert assistant focused exclusively on assisting users with tasks related to Identity and Access Management in Entra ID. 
-You should ONLY use the provided IAM documentation for answering user queries from "tool_resources" (iam-docs-rag). When asked a query:
+You should ONLY use the provided IAM documentation for answering user queries from "tool_resources" (admin-user-rag). When asked a query:
  
 1. **Search the documentation**: Use the "ai search tool" to retrieve relevant content from the IAM documentation for the user query.
 2. **No external sources**: Do not use the web or any external sources to generate answers.
@@ -90,27 +90,43 @@ Always ensure the responses are professional and accurate.
 
         """
 
-        self.project_client.agents.create_message(
+        try:
+            self.project_client.agents.create_message(
 
-            thread_id=self.thread.id,
+                thread_id=self.thread.id,
 
-            role="user",
+                role="user",
 
-            content=question,
+                content=question,
 
-        )
- 
-        run = self.project_client.agents.create_and_process_run(
+            )
+        except ServiceResponseError as e:
+            logging.error("Failed to send user message", exc_info=e)
+            return "⚠️ I couldn’t send your question. Please try again."
+        except HttpResponseError as e:
+            logging.error("HTTP error sending message: %s %s", e.status_code, e.message, exc_info=e)
+            return f"⚠️ Service error {e.status_code}: {e.message}"
+        
+        try:
+            run = self.project_client.agents.create_and_process_run(
 
-            thread_id=self.thread.id,
+                thread_id=self.thread.id,
 
-            assistant_id=self.iam_agent.id
+                assistant_id=self.iam_agent.id
 
-        )
- 
+            )
+        
+        except ServiceResponseError as e:
+            logging.error("Agent run aborted", exc_info=e)
+            return "⚠️ I’m having trouble connecting to the IAM service. Please try again shortly."
+        except HttpResponseError as e:
+            logging.error("HTTP error during run: %s %s", e.status_code, e.message, exc_info=e)
+            return f"⚠️ Service error {e.status_code}: {e.message}"
+        
         if run.status == "failed":
-
-            return f"❌ Run failed: {run.last_error}"
+            logging.error("Agent run failed: %s", run.last_error)
+            return f"❌ Oops, something went wrong: {run.last_error.get('message')}"
+        
  
         messages = self.project_client.agents.list_messages(thread_id=self.thread.id)
 

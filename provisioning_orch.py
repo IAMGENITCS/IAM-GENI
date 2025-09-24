@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from semantic_kernel.functions import kernel_function
 from azure.identity import DefaultAzureCredential
 from azure.identity import AzureCliCredential
+from datetime import datetime, timedelta
  
 load_dotenv()
  
@@ -344,3 +345,160 @@ class ProvisioningAgent:
         # Format as a markdown-style list
         lines = [f"- {name}" for name in ownerless]
         return "\n".join(lines)
+    
+
+    @kernel_function(description="List Entra ID groups whose owners are inactive. Only includes groups that have owners.")
+    async def list_groups_with_inactive_owners(self, limit: int = 0, count_only: bool = False) -> str:
+        groups_url = f"{self.graph_base_url}/groups?$select=id,displayName"
+        groups_resp = requests.get(groups_url, headers=self._headers)
+        if groups_resp.status_code != 200:
+            return f"❌ Error fetching groups: {groups_resp.status_code} – {groups_resp.text}"
+
+        groups = groups_resp.json().get("value", [])
+        inactive_groups = []
+
+        for group in groups:
+            group_id = group["id"]
+            group_name = group["displayName"]
+
+            owners_url = f"{self.graph_base_url}/groups/{group_id}/owners?$select=id,userPrincipalName,accountEnabled"
+            owners_resp = requests.get(owners_url, headers=self._headers)
+            if owners_resp.status_code != 200:
+                continue  # skip if owners can't be fetched
+
+            owners = owners_resp.json().get("value", [])
+
+            # ✅ Skip groups with no owners
+            if not owners:
+                continue
+
+            # ✅ Check if all owners are inactive
+            active_owners = [o for o in owners if o.get("accountEnabled", True)]
+            if not active_owners:
+                inactive_groups.append(f"🚫 {group_name} (ID: {group_id})")
+
+        if count_only:
+            return f"🔢 Total groups with inactive owners: {len(inactive_groups)}"
+
+        if not inactive_groups:
+            return "✅ All groups with owners have at least one active owner."
+
+        if limit > 0:
+            inactive_groups = inactive_groups[:limit]
+
+        return "\n".join(inactive_groups)
+
+
+    @kernel_function(description="List guest users who haven't signed in for the last 90 days. Returns count or top N users.")
+    async def list_inactive_guest_users(self, limit: int = 5, count_only: bool = False) -> str:
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        url = f"{self.graph_base_url}/users?$filter=userType eq 'Guest'&$select=displayName,userPrincipalName,signInActivity&$top=999"
+
+        resp = requests.get(url, headers=self._headers)
+        if resp.status_code != 200:
+            return f"❌ Error fetching guest users: {resp.status_code} – {resp.text}"
+
+        users = resp.json().get("value", [])
+        inactive_guests = []
+
+        for user in users:
+            sign_in = user.get("signInActivity", {}).get("lastSignInDateTime")
+            if not sign_in:
+                inactive_guests.append(f"🕸️ {user['displayName']} ({user['userPrincipalName']}) — Never signed in")
+                continue
+
+            try:
+                last_sign_in = datetime.strptime(sign_in, "%Y-%m-%dT%H:%M:%SZ")
+                if last_sign_in < cutoff_date:
+                    inactive_guests.append(f"⏳ {user['displayName']} ({user['userPrincipalName']}) — Last sign-in: {sign_in}")
+            except Exception:
+                continue  # skip malformed dates
+
+        if count_only:
+            return f"🔢 Total inactive guest users (90+ days): {len(inactive_guests)}"
+
+        if not inactive_guests:
+            return "✅ All guest users have signed in within the last 90 days."
+
+        return "\n".join(inactive_guests[:limit])
+    
+
+    @kernel_function(description="List users blocked by location-based Conditional Access policies in their sign-ins.")
+    async def get_users_blocked_by_location_ca(self) -> str:
+        url = f"{self.graph_base_url}/auditLogs/signIns?$filter=status/errorCode eq 53003 and conditionalAccessStatus eq 'failure'"
+        users_blocked = []
+
+        while url:
+            resp = requests.get(url, headers=self._headers)
+            if resp.status_code != 200:
+                return f"❌ Error fetching sign-in logs: {resp.status_code} – {resp.text}"
+
+            data = resp.json()
+            for signin in data.get("value", []):
+                applied_policies = signin.get("appliedConditionalAccessPolicies", [])
+                # Filter for policies that look like location-based
+                failing_policies = [
+                    p.get("displayName") for p in applied_policies if p.get("result") == "failure"
+                ]
+                if any("location" in (p or "").lower() for p in failing_policies):
+                    users_blocked.append({
+                        "userPrincipalName": signin.get("userPrincipalName"),
+                        "userId": signin.get("userId"),
+                        "time": signin.get("createdDateTime"),
+                        "policies": failing_policies
+                    })
+
+            url = data.get("@odata.nextLink")  # pagination
+
+        if not users_blocked:
+            return "✅ No users were blocked by location-based Conditional Access policies."
+
+        # Return a summarized string (could also return JSON if you prefer structured output)
+        summary = "\n".join(
+            f"- {u['userPrincipalName']} at {u['time']} (Policies: {', '.join(u['policies'])})"
+            for u in users_blocked[:20]  # limit to first 20 for readability
+        )
+        return f"🚫 Users blocked by location-based CA policies:\n{summary}"
+    
+    @kernel_function(description="List Entra ID administrators who have not registered Certificate-based authentication.")
+    async def get_admins_without_cba(self) -> str:
+        # Step 1: Get Global Administrators role
+        roles_url = f"{self.graph_base_url}/directoryRoles/bbda4080-69bb-4b2d-bbaf-f0526515c6b9"
+        roles_resp = requests.get(roles_url, headers=self._headers)
+        if roles_resp.status_code != 200:
+            return f"❌ Error fetching roles: {roles_resp.status_code} – {roles_resp.text}"
+        roles = roles_resp.json().get("value", [])
+        if not roles:
+            return "No Global Administrator role found."
+        role_id = roles[0]["id"]
+
+        # Step 2: Get members of the GA role
+        members_url = f"{self.graph_base_url}/directoryRoles/{role_id}/members"
+        members_resp = requests.get(members_url, headers=self._headers)
+        if members_resp.status_code != 200:
+            return f"❌ Error fetching role members: {members_resp.status_code} – {members_resp.text}"
+        members = members_resp.json().get("value", [])
+
+        no_cba = []
+        for m in members:
+            user_id = m.get("id")
+            upn = m.get("userPrincipalName", "unknown")
+
+            # Step 3: Get auth methods for this user
+            methods_url = f"{self.graph_base_url}/users/{user_id}/authentication/methods"
+            methods_resp = requests.get(methods_url, headers=self._headers)
+            if methods_resp.status_code != 200:
+                continue
+
+            methods = methods_resp.json().get("value", [])
+            has_cba = any(
+                meth.get("@odata.type") == "#microsoft.graph.x509CertificateAuthenticationMethod"
+                for meth in methods
+            )
+            if not has_cba:
+                no_cba.append(upn)
+
+        if not no_cba:
+            return "✅ All Global Administrators have registered Certificate-based authentication."
+
+        return "🚫 Admins without CBA:\n" + "\n".join(f"- {u}" for u in no_cba)
